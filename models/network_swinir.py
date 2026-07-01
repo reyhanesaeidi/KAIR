@@ -61,7 +61,20 @@ def window_reverse(windows, window_size, H, W):
     x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
     return x
 
+class CAB(nn.Module):
 
+    def __init__(self, num_feat, compress_ratio=3, squeeze_factor=30):
+        super(CAB, self).__init__()
+
+        self.cab = nn.Sequential(
+            nn.Conv2d(num_feat, num_feat // compress_ratio, 3, 1, 1),
+            nn.GELU(),
+            nn.Conv2d(num_feat // compress_ratio, num_feat, 3, 1, 1),
+            ChannelAttention(num_feat, squeeze_factor)
+            )
+
+    def forward(self, x):
+        return self.cab(x)
 class WindowAttention(nn.Module):
     r""" Window based multi-head self attention (W-MSA) module with relative position bias.
     It supports both of shifted and non-shifted window.
@@ -389,17 +402,7 @@ class BasicLayer(nn.Module):
             for i in range(depth)])
 
          # OCAB
-        self.overlap_attn = OCAB(
-                            dim=dim,
-                            input_resolution=input_resolution,
-                            window_size=window_size,
-                            overlap_ratio=overlap_ratio,
-                            num_heads=num_heads,
-                            qkv_bias=qkv_bias,
-                            qk_scale=qk_scale,
-                            mlp_ratio=mlp_ratio,
-                            norm_layer=norm_layer
-                            )
+        self.cab = CAB(num_feat=dim)
              
 
         # patch merging layer
@@ -414,7 +417,7 @@ class BasicLayer(nn.Module):
                 x = checkpoint.checkpoint(blk, x, x_size)
             else:
                 x = blk(x, x_size)
-        x = self.overlap_attn(x, x_size, params['rpi_oca'])
+        x = self.cab(x)
         if self.downsample is not None:
             x = self.downsample(x)
         return x    
